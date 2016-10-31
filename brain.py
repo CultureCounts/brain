@@ -15,15 +15,16 @@ def handle_post(handler):
         #pprint(d)
     handler.wfile.write("true")
 
-class handler(BaseHTTPRequestHandler):
-    do_POST = handle_post
-
-def run_server():
+def run_server(config):
+    class handler(BaseHTTPRequestHandler):
+        config=config
+        do_POST = handle_post
     httpd = HTTPServer(('', 8555), handler)
     print 'Starting brain httpd server...'
     httpd.serve_forever()
 
 if __name__ == "__main__":
     from sys import argv
-    run_server()
+    config = imp.load_source("brain.config", "brain-config-defaults.py")
+    run_server(config)
 
