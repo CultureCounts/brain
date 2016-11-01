@@ -5,6 +5,8 @@ MATCHES = [
     {"plugin": "swap", "type_instance": "free"},
 ]
 
+KNOWN_GOOD_HOSTS = ["8.8.8.8", "198.35.26.96"]
+
 SERVER_TIMEOUT = 30
 
 ALERT = "echo"

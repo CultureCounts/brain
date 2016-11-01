@@ -4,7 +4,7 @@ import sys
 import json
 import time
 from datetime import datetime
-from subprocess import call
+from subprocess import call, PIPE
 from Queue import Queue, Empty
 from threading import Thread
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
@@ -28,6 +28,12 @@ def update_hysteresis(state, match, d):
         state[key] = check
         return check
     state[key] = check
+
+def check_host_pings(host):
+    return call("ping %s -c 1" % host,
+            stderr=PIPE,
+            stdout=PIPE,
+            shell=True) == 0
 
 def get_date():
     return datetime.now().strftime("%Y-%m-%d %X")
@@ -56,9 +62,11 @@ def handle_alert(alert, server, message):
 def handle_queue(q, config):
     last_contact = {}
     hysteresis_state = {}
+    last_online = None
     run = True
     while run:
         try:
+            now = time.time()
             try:
                 t, d = q.get(True, 1)
             except Empty:
@@ -68,7 +76,7 @@ def handle_queue(q, config):
                 host = d.get("host", None)
                 if not last_contact.has_key(d.get("host")):
                     print "Connected:", get_date(), d.get("host")
-                last_contact[d.get("host")] = time.time()
+                last_contact[d.get("host")] = now
             if t == "EXIT":
                 run = False
             elif t == "MATCH" and d:
@@ -79,15 +87,26 @@ def handle_queue(q, config):
                 #print "TEST", result
                 if result:
                     handle_alert(config.ALERT, s, result)
-            # check last_contact for all servers
-            for s in last_contact:
-                last_state = hysteresis_state.get(s, None)
-                if last_contact[s] < time.time() - config.SERVER_TIMEOUT:
-                    hysteresis_state[s] = "No response from server " + s + " for " + str(int(config.SERVER_TIMEOUT / 60)) + " minutes."
-                else:
-                    hysteresis_state[s] = None
-                if hysteresis_state[s] and not last_state:
-                    handle_alert(config.ALERT, s, hysteresis_state[s])
+            # make sure we are connected
+            if not last_online or last_online < now - config.SERVER_TIMEOUT / 2:
+                for s in config.KNOWN_GOOD_HOSTS:
+                    if check_host_pings(s):
+                        if not last_online:
+                            print "Online:", get_date()
+                        last_online = now
+            if last_online and last_online > now - config.SERVER_TIMEOUT:
+                # check last_contact for all servers
+                for s in last_contact:
+                    last_state = hysteresis_state.get(s, None)
+                    if last_contact[s] < now - config.SERVER_TIMEOUT:
+                        hysteresis_state[s] = "No response from server " + s + " for " + str(int(config.SERVER_TIMEOUT / 60)) + " minutes."
+                    else:
+                        hysteresis_state[s] = None
+                    if hysteresis_state[s] and not last_state:
+                        handle_alert(config.ALERT, s, hysteresis_state[s])
+            elif last_online:
+                print "Offline:", get_date()
+                last_online = None
         except KeyboardInterrupt:
             run = False
 
