@@ -1,9 +1,15 @@
 import os
 import imp
+import sys
 import json
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
 from pprint import pprint
+
+def load_config(configs):
+    for f in configs:
+        if os.path.isfile(f):
+            return imp.load_source("brain.config", f)
 
 def check_match(matchers, entry):
     for m in matchers:
@@ -30,6 +36,16 @@ def run_server(config):
 
 if __name__ == "__main__":
     from sys import argv
-    config = imp.load_source("brain.config", "brain-config-defaults.py")
+    if len(argv) > 1:
+        if os.path.isfile(argv[1]):
+            configs = [argv[1]]
+        else:
+            sys.stderr.write(argv[1] + " does not exist.\n")
+            sys.exit(1)
+    else:
+        configs = [
+            os.path.join(os.environ.get("HOME", "/"), ".brain-config.py"),
+            os.path.join(os.path.dirname(__file__), "brain-config-defaults.py")]
+    config = load_config(configs)
     run_server(config)
 
