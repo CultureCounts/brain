@@ -19,7 +19,7 @@ def get_match(matchers, entry):
         if all(item in entry.items() for item in m.items() if item[0] != "check"):
             return m
 
-def test_hysteresis(state, match, d):
+def update_hysteresis(state, match, d):
     check = match.get("check", lambda x: None)(d)
     key = tuple(sorted([m for m in match.items() if m[0] != "check"]))
     if check and not (state.has_key(key) and state[key]):
@@ -30,21 +30,17 @@ def test_hysteresis(state, match, d):
 def handle_log(handler, *args, **kwargs):
     pass
 
-def handle_contact(handler, host):
-    if not host in handler.contact:
-        handler.contact.append(host)
-        print "Collectd connected:", host
-
 def handle_post(handler):
     handler.send_response(200)
     handler.send_header('Content-type', 'text/plain')
     handler.end_headers()
     data = json.loads(handler.rfile.read(int(handler.headers['Content-Length'])))
     for d in data:
-        handle_contact(handler, d.get("host", "unknown"))
         match = get_match(handler.config.MATCHES, d)
         if match:
-            handler.q.put(d)
+            handler.q.put(["MATCH", d])
+        else:
+            handler.q.put(["PING", {"host": d.get("host")}])
     handler.wfile.write("true")
 
 def handle_alert(cmd, msg):
@@ -57,28 +53,34 @@ def handle_queue(q, config):
     while run:
         try:
             try:
-                d = q.get(True, 1)
-                #print d
-                #print match
+                t, d = q.get(True, 1)
             except Empty:
-                d = None
-            if d == "EXIT":
+                t, d = [None, None]
+            # log time from this host
+            if d and d.get("host", None):
+                host = d.get("host", None)
+                if not last_contact.has_key(d.get("host")):
+                    print d.get("host"), "connected"
+                last_contact[d.get("host")] = time.time()
+            if t == "EXIT":
                 run = False
-            elif d:
+            elif t == "MATCH" and d:
                 match = get_match(config.MATCHES, d)
                 print
                 print "MATCH", d, match
-                test = test_hysteresis(hysteresis_state, match, d)
-                print "TEST", test
-                if test:
-                    #print "HYSTERESIS TRIGGER", d
-                    handle_alert(config.ALERT, test)
-                # check last_contact for all servers
-                for s in last_contact:
-                    if last_contact(s) < time.time() - config.SERVER_TIMEOUT:
-                        handle_alert(config.ALERT, "No response from server " + s + " for " + str(int(config.SERVER_TIMEOUT / 60)) + " minutes.")
-            #else:
-            #    print "Timeout"
+                result = update_hysteresis(hysteresis_state, match, d)
+                print "TEST", result
+                if result:
+                    handle_alert(config.ALERT, result)
+            # check last_contact for all servers
+            for s in last_contact:
+                last_state = hysteresis_state.get(s, None)
+                if last_contact[s] < time.time() - config.SERVER_TIMEOUT:
+                    hysteresis_state[s] = "No response from server " + s + " for " + str(int(config.SERVER_TIMEOUT / 60)) + " minutes."
+                else:
+                    hysteresis_state[s] = None
+                if hysteresis_state[s] and not last_state:
+                    handle_alert(config.ALERT, hysteresis_state[s])
         except KeyboardInterrupt:
             run = False
 
@@ -98,7 +100,7 @@ def run_server(config):
         httpd.serve_forever()
     except KeyboardInterrupt:
         print "Exiting."
-        queue.put("EXIT")
+        queue.put(["EXIT", None])
         t.join()
 
 if __name__ == "__main__":
