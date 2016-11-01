@@ -2,6 +2,9 @@ import os
 import imp
 import sys
 import json
+import time
+from Queue import Queue, Empty
+from threading import Thread
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
 from pprint import pprint
@@ -23,16 +26,42 @@ def handle_post(handler):
     data = json.loads(handler.rfile.read(int(handler.headers['Content-Length'])))
     for d in data:
         if check_match(handler.config.MATCHES, d):
-            print "MATCH", d.get("time"), d.get("host"), d.get("plugin"), d.get("type"), d.get("type_instance"), d.get("plugin_instance"), d.get("dsnames"), d.get("values")
+            handler.q.put(d)
     handler.wfile.write("true")
 
+def handle_queue(q):
+    run = True
+    while run:
+        try:
+            try:
+                d = q.get(True, 1)
+            except Empty:
+                d = None
+            if d == False:
+                run = False
+            elif d:
+                print "MATCH", d
+            #else:
+            #    print "Timeout"
+        except KeyboardInterrupt:
+            run = False
+
 def run_server(config):
+    queue = Queue()
     class handler(BaseHTTPRequestHandler):
+        q=queue
         config=config
         do_POST = handle_post
     httpd = HTTPServer(('', 8555), handler)
-    print 'Starting brain httpd server...'
-    httpd.serve_forever()
+    t = Thread(target=handle_queue, args=(queue,))
+    try:
+        t.start()
+        print 'Starting brain httpd server...'
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print "Exiting."
+        queue.put(False)
+        t.join()
 
 if __name__ == "__main__":
     from sys import argv
