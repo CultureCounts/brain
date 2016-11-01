@@ -3,6 +3,7 @@ import imp
 import sys
 import json
 import time
+from datetime import datetime
 from subprocess import call
 from Queue import Queue, Empty
 from threading import Thread
@@ -28,6 +29,9 @@ def update_hysteresis(state, match, d):
         return check
     state[key] = check
 
+def get_date():
+    return datetime.now().strftime("%Y-%m-%d %X")
+
 def handle_log(handler, *args, **kwargs):
     pass
 
@@ -44,8 +48,10 @@ def handle_post(handler):
             handler.q.put(["PING", {"host": d.get("host")}])
     handler.wfile.write("true")
 
-def handle_alert(cmd, msg):
-    call(cmd + ' "' + msg + '"', shell=True)
+def handle_alert(alert, server, message):
+    date = get_date()
+    print "Alert:", date, server, message
+    call('%s "%s %s %s"' % (alert, date, server, message), shell=True)
 
 def handle_queue(q, config):
     last_contact = {}
@@ -61,7 +67,7 @@ def handle_queue(q, config):
             if d and d.get("host", None):
                 host = d.get("host", None)
                 if not last_contact.has_key(d.get("host")):
-                    print d.get("host"), "connected"
+                    print "Connected:", get_date(), d.get("host")
                 last_contact[d.get("host")] = time.time()
             if t == "EXIT":
                 run = False
@@ -72,7 +78,7 @@ def handle_queue(q, config):
                 result = update_hysteresis(hysteresis_state, match, d)
                 #print "TEST", result
                 if result:
-                    handle_alert(config.ALERT, result)
+                    handle_alert(config.ALERT, s, result)
             # check last_contact for all servers
             for s in last_contact:
                 last_state = hysteresis_state.get(s, None)
@@ -81,7 +87,7 @@ def handle_queue(q, config):
                 else:
                     hysteresis_state[s] = None
                 if hysteresis_state[s] and not last_state:
-                    handle_alert(config.ALERT, hysteresis_state[s])
+                    handle_alert(config.ALERT, s, hysteresis_state[s])
         except KeyboardInterrupt:
             run = False
 
