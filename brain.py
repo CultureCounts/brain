@@ -3,6 +3,7 @@ import imp
 import sys
 import json
 import time
+from subprocess import call
 from Queue import Queue, Empty
 from threading import Thread
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
@@ -44,7 +45,7 @@ def handle_post(handler):
     handler.wfile.write("true")
 
 def handle_alert(cmd, msg):
-    print "ALERT", cmd, msg
+    call(cmd + ' "' + msg + '"', shell=True)
 
 def handle_queue(q, config):
     last_contact = {}
@@ -66,10 +67,10 @@ def handle_queue(q, config):
                 run = False
             elif t == "MATCH" and d:
                 match = get_match(config.MATCHES, d)
-                print
-                print "MATCH", d, match
+                #print
+                #print "MATCH", d, match
                 result = update_hysteresis(hysteresis_state, match, d)
-                print "TEST", result
+                #print "TEST", result
                 if result:
                     handle_alert(config.ALERT, result)
             # check last_contact for all servers
