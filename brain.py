@@ -19,12 +19,21 @@ def check_match(matchers, entry):
         if all(item in entry.items() for item in m.items()):
             return True
 
+def handle_log(handler, *args, **kwargs):
+    pass
+
+def handle_contact(handler, host):
+    if not host in handler.contact:
+        handler.contact.append(host)
+        print "Collectd connected:", host
+
 def handle_post(handler):
     handler.send_response(200)
     handler.send_header('Content-type', 'text/plain')
     handler.end_headers()
     data = json.loads(handler.rfile.read(int(handler.headers['Content-Length'])))
     for d in data:
+        handle_contact(handler, d.get("host", "unknown"))
         if check_match(handler.config.MATCHES, d):
             handler.q.put(d)
     handler.wfile.write("true")
@@ -52,6 +61,8 @@ def run_server(config):
         q=queue
         config=config
         do_POST = handle_post
+        log_message = handle_log
+        contact = []
     httpd = HTTPServer(('', 8555), handler)
     t = Thread(target=handle_queue, args=(queue,))
     try:
