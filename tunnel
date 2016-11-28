@@ -2,7 +2,8 @@
 
 if [ "$1" = "" ]
 then
-  echo "Usage: $0 USER@SERVER"
+  echo "Usage: $0 USER@SERVER ..SSH-OPTIONS.."
 else
-  ssh -o ServerAliveInterval=15 -NR 8555:localhost:8555 ${1}
+  server="$1"; shift
+  ssh $@ -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -NR 8555:localhost:8555 ${server}
 fi
