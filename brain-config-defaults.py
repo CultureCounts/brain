@@ -20,5 +20,9 @@ SERVERS = {"default": {
     # Shell command that should be run when an alert comes in
     # Single argument passed - the alert message
     "command": "echo",
+
+    # shell command that should be run to launch the tunnel to a remote server
+    # should be blocking (e.g. no daemonising)
+    # "tunnel": "./tunnel myserver.com",
     }
 }

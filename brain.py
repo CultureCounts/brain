@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from subprocess import call, PIPE
 from Queue import Queue, Empty
-from threading import Thread
+from threading import Thread, Event
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
 from pprint import pprint
@@ -122,8 +122,27 @@ def handle_queue(q, config):
         except KeyboardInterrupt:
             run = False
 
+def maintain_tunnel(tunnelcommand, exit):
+    time.sleep(0.1)
+    while not exit.isSet():
+        try:
+            print "Tunnel starting:", tunnelcommand
+            p = call(tunnelcommand,
+                    stderr=PIPE,
+                    stdout=PIPE,
+                    shell=True)
+            print "Tunnel closed:", tunnelcommand
+            time.sleep(0.1)
+            # lets us ctrl-C out
+            for x in range(30):
+                if not exit.isSet():
+                    time.sleep(1)
+        except KeyboardInterrupt:
+            print "Tunnel exit:", tunnelcommand
+
 def run_server(config):
     queue = Queue()
+    exit = Event()
     class handler(BaseHTTPRequestHandler):
         q=queue
         config=config
@@ -132,15 +151,19 @@ def run_server(config):
         contact = []
     httpd = HTTPServer(('', 8555), handler)
     t = Thread(target=handle_queue, args=(queue,config,))
+    tunnels = [Thread(target=maintain_tunnel, args=(config.SERVERS[c].get("tunnel"),exit)) for c in config.SERVERS if config.SERVERS[c].get("tunnel", None)]
     try:
         t.start()
-        print 'Starting brain httpd server...'
+        [tunnel.start() for tunnel in tunnels]
+        print 'Starting brain httpd server.'
         httpd.serve_forever()
     except KeyboardInterrupt:
+        exit.set()
         print "Exiting."
         httpd.socket.close()
         queue.put(["EXIT", None])
         t.join()
+        [tunnel.join() for tunnel in tunnels]
 
 if __name__ == "__main__":
     from sys import argv
