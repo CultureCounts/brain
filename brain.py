@@ -115,6 +115,10 @@ def handle_queue(q, config):
             elif last_online:
                 print "Offline:", get_date()
                 last_online = None
+                known_servers = last_contact.keys()
+                for s in known_servers:
+                    del hysteresis_state[s]
+                    del last_contact[s]
         except KeyboardInterrupt:
             run = False
 
