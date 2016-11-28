@@ -138,6 +138,7 @@ def run_server(config):
         httpd.serve_forever()
     except KeyboardInterrupt:
         print "Exiting."
+        httpd.socket.close()
         queue.put(["EXIT", None])
         t.join()
 
