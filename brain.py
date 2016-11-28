@@ -16,7 +16,11 @@ def load_config(configs):
         if os.path.isfile(f):
             return imp.load_source("config", f)
 
-def get_match(matchers, entry):
+def merge_config(config, d):
+    return dict(config.SERVERS.get("default", {}), **config.SERVERS.get(d.get("host", None), {}))
+
+def get_match(config, entry):
+    matchers = merge_config(config, entry).get("matchers", [])
     for m in matchers:
         if all(item in entry.items() for item in m.items() if item[0] != "check"):
             return m
@@ -47,7 +51,7 @@ def handle_post(handler):
     handler.end_headers()
     data = json.loads(handler.rfile.read(int(handler.headers['Content-Length'])))
     for d in data:
-        match = get_match(handler.config.MATCHES, d)
+        match = get_match(handler.config, d)
         if match:
             handler.q.put(["MATCH", d])
         else:
@@ -77,33 +81,37 @@ def handle_queue(q, config):
                 if not last_contact.has_key(d.get("host")):
                     print "Connected:", get_date(), d.get("host")
                 last_contact[d.get("host")] = now
+            merged_config = merge_config(config, d or {})
+            command = merged_config.get("command", "")
+            timeout = merged_config.get("timeout", 120)
+            #print d, command, timeout
             if t == "EXIT":
                 run = False
             elif t == "MATCH" and d:
-                match = get_match(config.MATCHES, d)
+                match = get_match(config, d)
                 #print
                 #print "MATCH", d, match
                 result = update_hysteresis(hysteresis_state, match, d)
                 #print "TEST", result
-                if result:
-                    handle_alert(config.ALERT, s, result)
+                if result and command:
+                    handle_alert(command, s, result)
             # make sure we are connected
-            if not last_online or last_online < now - config.SERVER_TIMEOUT / 2:
+            if not last_online or last_online < now - timeout / 2:
                 for s in config.KNOWN_GOOD_HOSTS:
                     if check_host_pings(s):
                         if not last_online:
                             print "Online:", get_date()
                         last_online = now
-            if last_online and last_online > now - config.SERVER_TIMEOUT:
+            if last_online and last_online > now - timeout:
                 # check last_contact for all servers
                 for s in last_contact:
                     last_state = hysteresis_state.get(s, None)
-                    if last_contact[s] < now - config.SERVER_TIMEOUT:
-                        hysteresis_state[s] = "No response from server " + s + " for " + str(int(config.SERVER_TIMEOUT / 60)) + " minutes."
+                    if last_contact[s] < now - timeout:
+                        hysteresis_state[s] = "No response from server " + s + " for " + str(int(timeout / 60)) + " minutes."
                     else:
                         hysteresis_state[s] = None
                     if hysteresis_state[s] and not last_state:
-                        handle_alert(config.ALERT, s, hysteresis_state[s])
+                        handle_alert(command, s, hysteresis_state[s])
             elif last_online:
                 print "Offline:", get_date()
                 last_online = None
