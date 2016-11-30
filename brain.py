@@ -124,6 +124,7 @@ def handle_queue(q, config):
 
 def maintain_tunnel(tunnelcommand, exit):
     time.sleep(0.1)
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     while not exit.isSet():
         try:
             print "Tunnel starting:", tunnelcommand
