@@ -6,7 +6,6 @@ import sys
 import json
 import time
 import signal
-import psutil
 from functools import partial
 from random import random
 from datetime import datetime
