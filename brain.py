@@ -92,10 +92,12 @@ def handle_queue(q, config):
                 run = False
             elif t == "MATCH" and d:
                 match = get_match(config, d)
-                #print
-                #print "MATCH", d, match
+                host = d.get("host")
                 result = update_hysteresis(hysteresis_state, match, d)
-                #print "TEST", result
+                if "--raw" in sys.argv:
+                    print "MATCH", d, match
+                    print "TEST", result
+                    print
                 if result and command:
                     handle_alert(command, host, result)
             # make sure we are connected
