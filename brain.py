@@ -14,6 +14,9 @@ from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
 from pprint import pprint
 
+# unbuffered output
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+
 def load_config(configs):
     for f in configs:
         if os.path.isfile(f):
