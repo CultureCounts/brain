@@ -140,8 +140,8 @@ def maintain_tunnel(tunnelcommand, exit):
         try:
             print "Tunnel starting:", tunnelcommand
             p = call(tunnelcommand,
-                    stderr=PIPE,
-                    stdout=PIPE,
+                    stderr=sys.stderr,
+                    stdout=sys.stdout,
                     shell=True)
             print "Tunnel closed:", tunnelcommand
             time.sleep(0.1)
