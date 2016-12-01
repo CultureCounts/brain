@@ -170,7 +170,7 @@ def run_server(config):
 
 if __name__ == "__main__":
     from sys import argv
-    if len(argv) > 1:
+    if len(argv) > 1 and not argv[1].startswith("-"):
         if os.path.isfile(argv[1]):
             configs = [argv[1]]
         else:
