@@ -97,7 +97,7 @@ def handle_queue(q, config):
                 result = update_hysteresis(hysteresis_state, match, d)
                 #print "TEST", result
                 if result and command:
-                    handle_alert(command, s, result)
+                    handle_alert(command, host, result)
             # make sure we are connected
             if not last_online or last_online < now - timeout / 2:
                 for s in config.KNOWN_GOOD_HOSTS:
