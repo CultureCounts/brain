@@ -5,6 +5,7 @@ import imp
 import sys
 import json
 import time
+from random import random
 from datetime import datetime
 from subprocess import call, PIPE
 from Queue import Queue, Empty
@@ -125,7 +126,7 @@ def handle_queue(q, config):
             run = False
 
 def maintain_tunnel(tunnelcommand, exit):
-    time.sleep(0.1)
+    time.sleep(random() * 0.3)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     while not exit.isSet():
         try:
