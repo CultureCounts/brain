@@ -5,9 +5,12 @@ import imp
 import sys
 import json
 import time
+import signal
+import psutil
+from functools import partial
 from random import random
 from datetime import datetime
-from subprocess import call, PIPE
+from subprocess import call, Popen, PIPE
 from Queue import Queue, Empty
 from threading import Thread, Event
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
@@ -68,89 +71,89 @@ def handle_post(handler):
 
 def handle_alert(alert, server, message):
     date = get_date()
-    print "Alert:", date, server, message
+    print date, "Alert:", server, message
     call('%s "%s %s %s"' % (alert, date, server, message), shell=True)
 
-def handle_queue(q, config):
+def handle_queue(q, config, exit):
     last_contact = {}
     hysteresis_state = {}
     last_online = None
-    run = True
-    while run:
-        try:
-            now = time.time()
-            try:
-                t, d = q.get(True, 1)
-            except Empty:
-                t, d = [None, None]
-            # log time from this host
-            if d and d.get("host", None):
-                host = d.get("host", None)
-                if not last_contact.has_key(d.get("host")):
-                    print "Connected:", get_date(), d.get("host")
-                last_contact[host] = now
-                if not hysteresis_state.has_key(host):
-                    hysteresis_state[host] = {}
-            merged_config = merge_config(config, d or {})
-            command = merged_config.get("command", "")
-            timeout = merged_config.get("timeout", 120)
-            #print d, command, timeout
-            if t == "EXIT":
-                run = False
-            elif t == "MATCH" and d and d.get("host", None):
-                match = get_match(config, d)
-                host = d.get("host")
-                result = update_hysteresis(hysteresis_state, host, match, d)
-                if "--raw" in sys.argv:
-                    print "MATCH", d, match
-                    print "TEST", result
-                    print
-                if result and command:
-                    handle_alert(command, host, result)
-            # make sure we are connected
-            if not last_online or last_online < now - timeout / 2:
-                for s in config.KNOWN_GOOD_HOSTS:
-                    if check_host_pings(s):
-                        if not last_online:
-                            print "Online:", get_date()
-                        last_online = now
-            if last_online and last_online > now - timeout:
-                # check last_contact for all servers
-                for s in last_contact:
-                    last_state = hysteresis_state[s].get("connection")
-                    if last_contact[s] < now - timeout:
-                        hysteresis_state[s]["connection"] = "No response from server " + s + " for " + str(int(timeout / 60)) + " minutes."
-                    elif hysteresis_state[s].has_key("connection"):
-                        del hysteresis_state[s]["connection"]
-                    if hysteresis_state[s].get("connection", None) and not last_state:
-                        handle_alert(command, s, hysteresis_state[s]["connection"])
-            elif last_online:
-                print "Offline:", get_date()
-                last_online = None
-                known_servers = last_contact.keys()
-                for s in known_servers:
-                    del last_contact[s]
-        except KeyboardInterrupt:
-            run = False
-
-def maintain_tunnel(tunnelcommand, exit):
-    time.sleep(random() * 0.3)
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     while not exit.isSet():
+        now = time.time()
         try:
-            print "Tunnel starting:", tunnelcommand
-            p = call(tunnelcommand,
-                    stderr=sys.stderr,
-                    stdout=sys.stdout,
-                    shell=True)
-            print "Tunnel closed:", tunnelcommand
+            t, d = q.get(True, 1)
+        except Empty:
+            t, d = [None, None]
+        # log time from this host
+        if d and d.get("host", None):
+            host = d.get("host", None)
+            if not last_contact.has_key(d.get("host")):
+                print get_date(), "Connected:", d.get("host")
+            last_contact[host] = now
+            if not hysteresis_state.has_key(host):
+                hysteresis_state[host] = {}
+        merged_config = merge_config(config, d or {})
+        command = merged_config.get("command", "")
+        timeout = merged_config.get("timeout", 120)
+        #print d, command, timeout
+        if t == "MATCH" and d and d.get("host", None):
+            match = get_match(config, d)
+            host = d.get("host")
+            result = update_hysteresis(hysteresis_state, host, match, d)
+            if "--raw" in sys.argv:
+                print "MATCH", d, match
+                print "TEST", result
+                print
+            if result and command:
+                handle_alert(command, host, result)
+        # make sure we are connected
+        if not last_online or last_online < now - timeout / 2:
+            for s in config.KNOWN_GOOD_HOSTS:
+                if check_host_pings(s):
+                    if not last_online:
+                        print get_date(), "Online."
+                    last_online = now
+        if last_online and last_online > now - timeout:
+            # check last_contact for all servers
+            for s in last_contact:
+                last_state = hysteresis_state[s].get("connection")
+                if last_contact[s] < now - timeout:
+                    hysteresis_state[s]["connection"] = "No response from server " + s + " for " + str(int(timeout / 60)) + " minutes."
+                elif hysteresis_state[s].has_key("connection"):
+                    del hysteresis_state[s]["connection"]
+                if hysteresis_state[s].get("connection", None) and not last_state:
+                    handle_alert(command, s, hysteresis_state[s]["connection"])
+        elif last_online:
+            print get_date(), "Offline."
+            last_online = None
+            known_servers = last_contact.keys()
+            for s in known_servers:
+                del last_contact[s]
+
+def maintain_tunnel(tunnelcommand, server, exit):
+    time.sleep(random() * 0.3)
+    os.chdir(os.path.dirname(os.path.realpath(__file__)))
+    while not exit.isSet():
+        print get_date(), "Tunnel starting:", tunnelcommand
+        p = Popen(tunnelcommand, stderr=sys.stderr, stdout=sys.stdout, shell=True, preexec_fn=os.setsid)
+        while not exit.isSet() and not p.poll():
             time.sleep(0.1)
-            # lets us ctrl-C out
-            for x in range(30):
-                if not exit.isSet():
-                    time.sleep(1)
-        except KeyboardInterrupt:
-            print "Tunnel exit:", tunnelcommand
+        if exit.isSet():
+            os.killpg(p.pid, signal.SIGINT)
+        print get_date(), "Tunnel closed:", tunnelcommand
+        time.sleep(0.1)
+        # lets us ctrl-C out
+        for x in range(30):
+            if not exit.isSet():
+                time.sleep(1)
+
+def handle_exit(exit, httpd, runner, tunnels, signum, frame):
+    print get_date(), "Caught exit signal:", signum
+    exit.set()
+    runner.join()
+    [tunnel.join() for tunnel in tunnels]
+    httpd.socket.close()
+    print get_date(), "Exiting."
 
 def run_server(config):
     queue = Queue()
@@ -162,20 +165,21 @@ def run_server(config):
         log_message = handle_log
         contact = []
     httpd = HTTPServer(('', 8555), handler)
-    t = Thread(target=handle_queue, args=(queue,config,))
-    tunnels = [Thread(target=maintain_tunnel, args=(config.SERVERS[c].get("tunnel"),exit)) for c in config.SERVERS if config.SERVERS[c].get("tunnel", None)]
+    runner = Thread(target=handle_queue, args=(queue,config,exit))
+    tunnels = [Thread(target=maintain_tunnel, args=(config.SERVERS[c].get("tunnel"), c, exit)) for c in config.SERVERS if config.SERVERS[c].get("tunnel", None)]
+    
+    exitfn = partial(handle_exit, exit, httpd, runner, tunnels)
+    signal.signal(signal.SIGTERM, exitfn)
+    signal.signal(signal.SIGINT, exitfn)
+    
+    runner.start()
+    [tunnel.start() for tunnel in tunnels]
+    print get_date(), 'Starting.'
     try:
-        t.start()
-        [tunnel.start() for tunnel in tunnels]
-        print 'Starting brain httpd server.'
         httpd.serve_forever()
-    except KeyboardInterrupt:
-        exit.set()
-        print "Exiting."
-        httpd.socket.close()
-        queue.put(["EXIT", None])
-        t.join()
-        [tunnel.join() for tunnel in tunnels]
+    except Exception, e:
+        if not exit.isSet():
+            print get_date(), "httpd:", str(e)
 
 if __name__ == "__main__":
     from sys import argv
