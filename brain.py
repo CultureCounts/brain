@@ -28,9 +28,11 @@ def get_match(config, entry):
         if all(item in entry.items() for item in m.items() if item[0] != "check"):
             return m
 
-def update_hysteresis(state, match, d):
+def update_hysteresis(hysteresis_states, host, match, d):
+    state = hysteresis_states.get(host, {})
     check = match.get("check", lambda x: None)(d)
     key = tuple(sorted([m for m in match.items() if m[0] != "check"]))
+    #print host, key, check
     if check and not (state.has_key(key) and state[key]):
         state[key] = check
         return check
@@ -83,17 +85,19 @@ def handle_queue(q, config):
                 host = d.get("host", None)
                 if not last_contact.has_key(d.get("host")):
                     print "Connected:", get_date(), d.get("host")
-                last_contact[d.get("host")] = now
+                last_contact[host] = now
+                if not hysteresis_state.has_key(host):
+                    hysteresis_state[host] = {}
             merged_config = merge_config(config, d or {})
             command = merged_config.get("command", "")
             timeout = merged_config.get("timeout", 120)
             #print d, command, timeout
             if t == "EXIT":
                 run = False
-            elif t == "MATCH" and d:
+            elif t == "MATCH" and d and d.get("host", None):
                 match = get_match(config, d)
                 host = d.get("host")
-                result = update_hysteresis(hysteresis_state, match, d)
+                result = update_hysteresis(hysteresis_state, host, match, d)
                 if "--raw" in sys.argv:
                     print "MATCH", d, match
                     print "TEST", result
@@ -110,19 +114,18 @@ def handle_queue(q, config):
             if last_online and last_online > now - timeout:
                 # check last_contact for all servers
                 for s in last_contact:
-                    last_state = hysteresis_state.get(s, None)
+                    last_state = hysteresis_state[s].get("connection")
                     if last_contact[s] < now - timeout:
-                        hysteresis_state[s] = "No response from server " + s + " for " + str(int(timeout / 60)) + " minutes."
-                    else:
-                        hysteresis_state[s] = None
-                    if hysteresis_state[s] and not last_state:
-                        handle_alert(command, s, hysteresis_state[s])
+                        hysteresis_state[s]["connection"] = "No response from server " + s + " for " + str(int(timeout / 60)) + " minutes."
+                    elif hysteresis_state[s].has_key("connection"):
+                        del hysteresis_state[s]["connection"]
+                    if hysteresis_state[s].get("connection", None) and not last_state:
+                        handle_alert(command, s, hysteresis_state[s]["connection"])
             elif last_online:
                 print "Offline:", get_date()
                 last_online = None
                 known_servers = last_contact.keys()
                 for s in known_servers:
-                    del hysteresis_state[s]
                     del last_contact[s]
         except KeyboardInterrupt:
             run = False
